@@ -1,0 +1,11 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+SQLAlchemy>=2.0
+httpx>=0.27
+python-multipart>=0.0.9    # Twilio webhook (form-encoded) parsing
+alembic>=1.13
+psycopg2-binary>=2.9        # PostgreSQL driver (production)
+gunicorn>=21.2              # process manager for uvicorn workers (production)
+redis>=5.0                 # distributed rate limiting / shared state (optional)
+websockets>=12.0           # Deepgram realtime streaming (optional)

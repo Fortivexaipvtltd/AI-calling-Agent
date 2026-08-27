@@ -1,0 +1,484 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Highh — Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F4F5F7; --panel:#FFFFFF; --ink:#14171A; --muted:#6B7280; --faint:#9AA1AB;
+    --line:#E4E6EB; --line2:#EEF0F3;
+    --live:#1F9E6E; --live-soft:#E4F5EE; --blue:#2F6BFF; --blue-soft:#E9EFFF;
+    --warn:#B7791F; --warn-soft:#FBF1DE; --stop:#C0392B; --stop-soft:#FBE9E7;
+    --sans:'Inter',system-ui,sans-serif; --mono:'IBM Plex Mono',ui-monospace,monospace;
+    --r:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:14px;line-height:1.45;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer}
+  input,select,textarea{font-family:inherit;font-size:14px}
+  .mono{font-family:var(--mono)} .muted{color:var(--muted)}
+  a{color:var(--blue);text-decoration:none}
+
+  .app{display:grid;grid-template-columns:210px 1fr;min-height:100vh}
+  nav.side{background:var(--panel);border-right:1px solid var(--line);padding:16px 12px;position:sticky;top:0;height:100vh}
+  .brand{font-family:var(--mono);font-weight:700;letter-spacing:.16em;font-size:14px;padding:6px 10px 4px}
+  .brand small{display:block;font-weight:500;letter-spacing:.02em;font-size:10px;color:var(--muted);margin-top:2px}
+  .health{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--muted);padding:2px 10px 14px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--faint)} .dot.ok{background:var(--live)}
+  .navbtn{display:flex;align-items:center;gap:10px;width:100%;text-align:left;border:0;background:transparent;color:var(--muted);padding:9px 10px;border-radius:8px;font-size:13.5px;font-weight:500;margin-bottom:2px}
+  .navbtn:hover{background:var(--line2);color:var(--ink)}
+  .navbtn.active{background:var(--ink);color:#fff}
+  .navbtn .ic{width:16px;text-align:center;font-size:14px}
+  .cap{margin-top:14px;padding:8px 10px;font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+  main{padding:22px 26px;max-width:1180px}
+  .head{display:flex;align-items:baseline;gap:12px;margin-bottom:18px}
+  .head h1{font-size:20px;margin:0;font-weight:600}
+  .head .sub{color:var(--muted);font-size:13px}
+  .spacer{flex:1}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:var(--r)}
+  .panel h2{margin:0;padding:13px 16px;border-bottom:1px solid var(--line2);font-size:11px;font-family:var(--mono);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .bd{padding:16px}
+  .grid2{display:grid;grid-template-columns:1fr 320px;gap:16px;align-items:start}
+  .grid3{display:grid;grid-template-columns:230px 1fr 300px;gap:16px;align-items:start}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:18px}
+  .stat{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px}
+  .stat .k{font-family:var(--mono);font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+  .stat .v{font-size:28px;font-weight:700;margin-top:6px;letter-spacing:-.02em}
+
+  .btn{border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:8px;padding:9px 15px;font-size:13.5px;font-weight:500}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+  .btn.ghost{background:var(--panel);color:var(--ink)}
+  .btn.live{background:var(--live);border-color:var(--live)}
+  .btn.stop{background:var(--panel);color:var(--stop);border-color:var(--stop)}
+  .btn.sm{padding:6px 11px;font-size:12px}
+  .btn.xs{padding:4px 9px;font-size:11.5px}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:10px 12px;border-bottom:1px solid var(--line2)}
+  td{padding:11px 12px;border-bottom:1px solid var(--line2);font-size:13.5px;vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  tr.click{cursor:pointer} tr.click:hover{background:var(--line2)}
+  .badge{font-family:var(--mono);font-size:10.5px;padding:3px 8px;border-radius:6px;background:var(--line2);color:var(--muted);white-space:nowrap}
+  .badge.new{background:var(--blue-soft);color:var(--blue)}
+  .badge.contacted{background:var(--warn-soft);color:var(--warn)}
+  .badge.qualified{background:var(--blue-soft);color:var(--blue)}
+  .badge.interested{background:var(--live-soft);color:var(--live)}
+  .badge.converted{background:var(--live-soft);color:var(--live)}
+  .badge.lost{background:var(--stop-soft);color:var(--stop)}
+  .badge.state{background:var(--live-soft);color:var(--live)}
+
+  input[type=text],input[type=tel],input[type=email],input[type=password],select,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:none;background:var(--panel)}
+  input:focus,select:focus,textarea:focus{border-color:var(--ink)}
+  label.fld{display:block;margin-bottom:12px}
+  label.fld .lb{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-bottom:5px;display:block}
+  .rowflex{display:flex;gap:8px}
+
+  .rail{list-style:none;margin:0;padding:8px 0}
+  .stage{display:flex;align-items:center;gap:10px;padding:7px 16px;font-family:var(--mono);font-size:12px;color:var(--muted);position:relative}
+  .stage .node{width:9px;height:9px;border-radius:50%;border:1.5px solid var(--line);background:var(--panel);flex:none}
+  .stage::before{content:"";position:absolute;left:20.5px;top:-6px;height:12px;width:1.5px;background:var(--line)}
+  .stage:first-child::before{display:none}
+  .stage.done{color:var(--ink)} .stage.done .node{background:var(--ink);border-color:var(--ink)}
+  .stage.active{color:var(--live)} .stage.active .node{background:var(--live);border-color:var(--live);box-shadow:0 0 0 3px var(--live-soft)}
+  .meter{margin:10px 16px}
+  .meter .lb{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;color:var(--muted);margin-bottom:4px}
+  .bar{height:6px;background:var(--line2);border-radius:999px;overflow:hidden}
+  .bar>span{display:block;height:100%;background:var(--ink);width:0;transition:width .35s}
+  .bar.live>span{background:var(--live)}
+
+  .thread{padding:16px;min-height:280px;max-height:44vh;overflow:auto;display:flex;flex-direction:column;gap:10px}
+  .msg{max-width:76%;padding:9px 12px;border-radius:12px;font-size:14px}
+  .msg .tag{font-family:var(--mono);font-size:10px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);display:block;margin-bottom:3px}
+  .msg.agent{align-self:flex-start;background:var(--line2);border-bottom-left-radius:4px}
+  .msg.lead{align-self:flex-end;background:var(--ink);color:#fff;border-bottom-right-radius:4px}
+  .msg.lead .tag{color:rgba(255,255,255,.6)}
+  .msg.tool{align-self:flex-start;background:var(--live-soft);color:var(--live);font-family:var(--mono);font-size:12px}
+  .empty{margin:auto;color:var(--muted);font-family:var(--mono);font-size:12px;text-align:center}
+  .composer{border-top:1px solid var(--line2);padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--panel);border-radius:999px;padding:4px 10px;font-size:12px;color:var(--muted)}
+  .chip:hover{border-color:var(--ink);color:var(--ink)}
+
+  .callhead{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:13px 16px;border-bottom:1px solid var(--line2)}
+  .who{font-weight:600}
+  .kv{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px dashed var(--line2);font-size:13px}
+  .kv:last-child{border-bottom:0}
+  .kv .k{font-family:var(--mono);font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.03em}
+  .integ{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line2)}
+  .integ:last-child{border-bottom:0}
+  .integ .nm{font-weight:600;min-width:120px}
+  .integ .st{margin-left:auto;font-family:var(--mono);font-size:11px}
+  .on{color:var(--live)} .off{color:var(--faint)}
+
+  .hidden{display:none!important}
+  .view{display:none} .view.on{display:block}
+  .toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:9px 16px;border-radius:8px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1} .toast.warn{background:var(--warn)} .toast.stop{background:var(--stop)}
+
+  @media (max-width:1000px){.app{grid-template-columns:1fr}nav.side{position:static;height:auto;display:flex;flex-wrap:wrap;gap:4px}.stats{grid-template-columns:repeat(2,1fr)}.grid2,.grid3{grid-template-columns:1fr}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="app">
+  <nav class="side">
+    <div class="brand">HIGHH<small>Human Sales Agent</small></div>
+    <div class="health"><span id="hdot" class="dot"></span><span id="hlabel">connecting</span></div>
+    <button class="navbtn active" data-v="dashboard"><span class="ic">▦</span>Dashboard</button>
+    <button class="navbtn" data-v="leads"><span class="ic">◆</span>Leads</button>
+    <button class="navbtn" data-v="calling"><span class="ic">◉</span>AI Calling</button>
+    <button class="navbtn" data-v="history"><span class="ic">≣</span>Call History</button>
+    <button class="navbtn" data-v="followups"><span class="ic">↻</span>Follow-ups</button>
+    <button class="navbtn" data-v="agents"><span class="ic">✦</span>Agents</button>
+    <button class="navbtn" data-v="simulator"><span class="ic">▷</span>Simulator</button>
+    <button class="navbtn" data-v="settings"><span class="ic">⚙</span>Settings</button>
+    <div id="cap" class="cap">—</div>
+  </nav>
+  <main>
+    <section id="v-dashboard" class="view on">
+      <div class="head"><h1>Dashboard</h1><span class="sub">live overview</span><span class="spacer"></span>
+        <button class="btn ghost sm" onclick="loadDashboard()">Refresh</button></div>
+      <div class="stats" id="stats"></div>
+      <div class="grid2">
+        <div class="panel"><h2>Leads by status</h2><div class="bd" id="byStatus"></div></div>
+        <div class="panel"><h2>Follow-ups due</h2><div class="bd" id="dashDue"></div></div>
+      </div>
+    </section>
+
+    <section id="v-leads" class="view">
+      <div class="head"><h1>Leads</h1><span class="sub" id="leadCount"></span><span class="spacer"></span>
+        <button class="btn ghost sm" onclick="showImport()">Import CSV</button>
+        <button class="btn sm" onclick="showAddLead()">Add lead</button></div>
+      <div id="importBox" class="panel hidden" style="margin-bottom:14px"><h2>Import</h2><div class="bd">
+        <div class="rowflex" style="margin-bottom:10px">
+          <input id="addName" type="text" placeholder="Name">
+          <input id="addPhone" type="tel" placeholder="+91…">
+          <input id="addEmail" type="email" placeholder="email (optional)">
+          <button class="btn sm" onclick="addLead()">Add</button></div>
+        <label class="fld"><span class="lb">Paste CSV (name,phone,email,source)</span>
+          <textarea id="csvBox" rows="4" placeholder="name,phone,email,source"></textarea></label>
+        <button class="btn sm" onclick="uploadCsv()">Upload CSV</button></div></div>
+      <div class="panel"><table>
+        <thead><tr><th>Name</th><th>Phone</th><th>Status</th><th>Stage</th><th>Score</th><th>Close %</th><th></th></tr></thead>
+        <tbody id="leadRows"></tbody></table></div>
+    </section>
+
+    <section id="v-lead" class="view">
+      <div class="head"><button class="btn ghost sm" onclick="show('leads')">← Leads</button>
+        <h1 id="ldName" style="margin-left:10px">Lead</h1><span class="spacer"></span>
+        <button class="btn live sm" onclick="callThisLead()">Start call</button></div>
+      <div class="grid2">
+        <div class="panel"><h2>Call history</h2><div class="bd" id="ldCalls"></div></div>
+        <div>
+          <div class="panel" style="margin-bottom:14px"><h2>Profile</h2><div class="bd" id="ldProfile"></div></div>
+          <div class="panel"><h2>Status</h2><div class="bd"><select id="ldStatus" onchange="setStatus()"></select></div></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="v-calling" class="view">
+      <div class="head"><h1>AI Calling</h1><span class="sub">live agent</span></div>
+      <div class="grid3">
+        <div class="panel">
+          <h2>Pipeline</h2><ul id="rail" class="rail"></ul>
+          <div class="meter"><div class="lb">Score <span id="scoreVal" class="mono">0</span></div><div class="bar"><span id="scoreBar"></span></div></div>
+          <div class="meter"><div class="lb">Close probability <span id="probVal" class="mono">0%</span></div><div class="bar live"><span id="probBar"></span></div></div>
+          <div class="meter"><div class="lb">Duration <span id="durVal" class="mono">0:00</span></div></div>
+        </div>
+        <div class="panel">
+          <div class="callhead">
+            <span id="cWho" class="who muted">No lead selected</span>
+            <span id="cState" class="badge state hidden">GREETING</span><span class="spacer"></span>
+            <button id="startBtn" class="btn live sm" disabled>Start call</button>
+            <button id="transferBtn" class="btn ghost sm hidden" onclick="transferHuman()">Transfer</button>
+            <button id="endBtn" class="btn stop sm hidden" onclick="endCall()">End</button>
+          </div>
+          <div id="thread" class="thread"><div class="empty">Pick a lead on the right, then Start call.</div></div>
+          <div id="composer" class="composer hidden">
+            <div class="chips" id="chips"></div>
+            <div class="rowflex"><input id="turnInput" type="text" placeholder="Lead says…" autocomplete="off">
+              <button class="btn" onclick="sendTurn()">Send</button></div>
+          </div>
+        </div>
+        <div class="panel"><h2>Leads</h2><div class="bd">
+          <ul id="callLeads" style="list-style:none;margin:0;padding:0;max-height:60vh;overflow:auto"></ul></div></div>
+      </div>
+    </section>
+
+    <section id="v-history" class="view">
+      <div class="head"><h1>Call History</h1><span class="sub" id="histCount"></span></div>
+      <div class="grid2">
+        <div class="panel"><table>
+          <thead><tr><th>Lead</th><th>Outcome</th><th>Status</th><th>When</th></tr></thead>
+          <tbody id="histRows"></tbody></table></div>
+        <div class="panel"><h2>Detail</h2><div class="bd" id="histDetail"><div class="empty" style="font-size:12px">Select a call.</div></div></div>
+      </div>
+    </section>
+
+    <section id="v-followups" class="view">
+      <div class="head"><h1>Follow-ups</h1><span class="spacer"></span>
+        <button class="btn sm" onclick="runDue()">Run due now</button></div>
+      <div class="panel"><table>
+        <thead><tr><th>Lead</th><th>Reason</th><th>Channel</th><th>Due</th><th>Status</th><th></th></tr></thead>
+        <tbody id="fuRows"></tbody></table></div>
+    </section>
+
+    <section id="v-agents" class="view">
+      <div class="head"><h1>Agents</h1><span class="spacer"></span>
+        <select id="agentPick" style="width:auto" onchange="loadAgent()"></select></div>
+      <div class="grid2">
+        <div class="panel"><h2>Configuration</h2><div class="bd">
+          <label class="fld"><span class="lb">Voice</span><select id="agVoice"></select></label>
+          <label class="fld"><span class="lb">Voice profile (prosody)</span><select id="agProfile"></select></label>
+          <label class="fld"><span class="lb">System prompt / persona</span><textarea id="agPersona" rows="7"></textarea></label>
+          <button class="btn sm" onclick="saveAgent()">Save configuration</button></div></div>
+        <div class="panel"><h2>Business information</h2><div class="bd" id="agBusiness"></div></div>
+      </div>
+    </section>
+
+    <section id="v-simulator" class="view">
+      <div class="head"><h1>Simulator</h1><span class="sub">test without a phone</span></div>
+      <div class="grid2">
+        <div class="panel">
+          <div class="callhead"><span class="who">Scenario</span><span class="spacer"></span>
+            <select id="prospect" style="width:auto">
+              <option value="interested_price_objection">Interested · price objection</option>
+              <option value="hot_ready_to_buy">Hot · ready to buy</option>
+              <option value="needs_decision_maker">Needs decision maker</option>
+              <option value="not_interested">Not interested</option>
+              <option value="opt_out">Opt out</option>
+              <option value="confused_repair">Confused · repair</option>
+            </select>
+            <button class="btn sm" onclick="runSim()">Run</button></div>
+          <div id="simThread" class="thread"><div class="empty">Pick a scenario and run.</div></div>
+        </div>
+        <div class="panel"><h2>Result & score</h2><div class="bd" id="simResult"><div class="empty" style="font-size:12px">—</div></div></div>
+      </div>
+    </section>
+
+    <section id="v-settings" class="view">
+      <div class="head"><h1>Settings / Integrations</h1><span class="spacer"></span>
+        <button class="btn ghost sm" onclick="loadSettings()">Refresh</button></div>
+      <div class="grid2">
+        <div class="panel"><h2>Integrations</h2><div class="bd" id="integ"></div></div>
+        <div class="panel"><h2>How to enable</h2><div class="bd" style="font-size:13px;line-height:1.7">
+          <p class="muted" style="margin-top:0">Set these in <span class="mono">.env</span>, then restart:</p>
+          <div class="kv"><span class="k">Twilio</span><span class="mono">SID / TOKEN / FROM_NUMBER</span></div>
+          <div class="kv"><span class="k">Deepgram</span><span class="mono">STT_PROVIDER=deepgram · STT_API_KEY</span></div>
+          <div class="kv"><span class="k">ElevenLabs</span><span class="mono">TTS_PROVIDER=elevenlabs · TTS_API_KEY</span></div>
+          <div class="kv"><span class="k">LLM</span><span class="mono">ANTHROPIC_API_KEY or BYO_*</span></div>
+          <div class="kv"><span class="k">WhatsApp</span><span class="mono">WHATSAPP_PROVIDER · WHATSAPP_TOKEN</span></div>
+          <div class="kv"><span class="k">Public URL</span><span class="mono">PUBLIC_BASE_URL (https)</span></div>
+          <div class="kv"><span class="k">Database</span><span class="mono">DATABASE_URL=postgresql://…</span></div>
+        </div></div>
+      </div>
+    </section>
+  </main>
+</div>
+<div id="toast" class="toast"></div>
+<script>
+const STATES=["GREETING","IDENTITY_CHECK","DISCOVERY","NEEDS_UNDERSTANDING","QUALIFICATION","OFFER","OBJECTION","RESOLVE","NEXT_STEP_SELECTION","CLOSE"];
+const CHIPS=["Yes, good time.","I want an AI job in 3 months.","Sounds a bit expensive.","Please email me the details.","I want to enroll."];
+const $=s=>document.querySelector(s);
+const el=(t,c,x)=>{const e=document.createElement(t);if(c)e.className=c;if(x!=null)e.textContent=x;return e;};
+let S={leadId:null,agentId:null,callId:null,active:false,durTimer:null,durStart:0};
+async function api(method,path,body){
+  const r=await fetch(path,{method,headers:{'content-type':'application/json'},body:body?JSON.stringify(body):undefined});
+  let d=null;try{d=await r.json();}catch(e){}
+  if(!r.ok){throw {status:r.status,detail:(d&&(d.error&&d.error.detail||d.detail))||('HTTP '+r.status)};}
+  return d;
+}
+function toast(m,k){const t=$('#toast');t.textContent=m;t.className='toast show'+(k?' '+k:'');setTimeout(()=>t.className='toast',2200);}
+function fmtDur(s){s=Math.max(0,Math.floor(s));return Math.floor(s/60)+':'+String(s%60).padStart(2,'0');}
+function when(iso){if(!iso)return'—';const d=new Date(iso);return d.toLocaleString([],{month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'});}
+document.querySelectorAll('.navbtn').forEach(b=>b.onclick=()=>show(b.dataset.v));
+function show(v){
+  document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active',b.dataset.v===v));
+  document.querySelectorAll('.view').forEach(s=>s.classList.remove('on'));
+  ($('#v-'+v)||$('#v-dashboard')).classList.add('on');
+  ({dashboard:loadDashboard,leads:loadLeads,calling:loadCalling,history:loadHistory,followups:loadFollowups,agents:loadAgents,settings:loadSettings}[v]||(()=>{}))();
+}
+async function boot(){
+  try{const h=await api('GET','/health');$('#hdot').className='dot ok';$('#hlabel').textContent=h.service||'online';}catch(e){$('#hlabel').textContent='offline';}
+  try{const c=await api('GET','/v1/capabilities');$('#cap').textContent=c.data.present+'/'+c.data.total+' capabilities';}catch(e){}
+  try{const a=await api('GET','/v1/agents');if(a.data&&a.data.length){S.agentId=a.data[0].id;}}catch(e){}
+  buildRail();renderChips();loadDashboard();
+}
+async function loadDashboard(){
+  let d;try{d=(await api('GET','/v1/dashboard')).data;}catch(e){return;}
+  const cards=[['Total leads',d.total_leads],['Calls today',d.calls_today],['Successful calls',d.successful_calls],['Follow-ups due',d.followups_due],['Conversion',Math.round(d.conversion_rate*100)+'%']];
+  const box=$('#stats');box.innerHTML='';
+  cards.forEach(([k,v])=>{const c=el('div','stat');c.appendChild(el('div','k',k));c.appendChild(el('div','v',v));box.appendChild(c);});
+  const bs=$('#byStatus');bs.innerHTML='';
+  ['new','contacted','qualified','interested','converted','lost'].forEach(s=>{const n=(d.leads_by_status||{})[s]||0;const row=el('div','kv');row.appendChild(el('span','badge '+s,s));row.appendChild(el('span','mono',n));bs.appendChild(row);});
+  const due=$('#dashDue');due.innerHTML='';
+  try{const f=((await api('GET','/v1/followups')).data||[]).filter(x=>['pending','scheduled','due'].includes(x.status)).slice(0,6);
+    if(!f.length)due.appendChild(el('div','empty','No follow-ups due.'));
+    f.forEach(x=>{const row=el('div','kv');row.appendChild(el('span',null,x.reason||x.status));row.appendChild(el('span','mono',when(x.due_at)));due.appendChild(row);});}catch(e){}
+}
+async function loadLeads(){
+  const d=(await api('GET','/v1/leads')).data||[];
+  $('#leadCount').textContent=d.length+' total';
+  const tb=$('#leadRows');tb.innerHTML='';
+  d.forEach(l=>{const tr=el('tr','click');tr.onclick=()=>openLead(l.id);
+    tr.appendChild(el('td',null,l.name||'—'));
+    const p=el('td');p.appendChild(el('span','mono',l.phone||''));tr.appendChild(p);
+    const st=el('td');st.appendChild(el('span','badge '+(l.status||'new'),l.status||'new'));tr.appendChild(st);
+    tr.appendChild(el('td',null,l.stage||'—'));tr.appendChild(el('td',null,l.score||0));
+    tr.appendChild(el('td',null,Math.round((l.close_probability||0)*100)+'%'));
+    const act=el('td');const b=el('button','btn xs live','Call');b.onclick=(e)=>{e.stopPropagation();S.leadId=l.id;show('calling');setTimeout(()=>selectCallLead(l.id),50);};act.appendChild(b);tr.appendChild(act);
+    tb.appendChild(tr);});
+}
+function showAddLead(){$('#importBox').classList.remove('hidden');$('#addName').focus();}
+function showImport(){$('#importBox').classList.toggle('hidden');}
+async function addLead(){
+  const name=$('#addName').value.trim(),phone=$('#addPhone').value.trim(),email=$('#addEmail').value.trim();
+  if(!name&&!phone)return;
+  await api('POST','/v1/leads/import',{leads:[{name,phone,email,source:'console'}]});
+  $('#addName').value='';$('#addPhone').value='';$('#addEmail').value='';toast('Lead added');loadLeads();
+}
+async function uploadCsv(){
+  const csv=$('#csvBox').value.trim();if(!csv)return;
+  const r=await api('POST','/v1/leads/upload-csv',{csv});toast('Imported '+r.data.created+' leads');$('#csvBox').value='';loadLeads();
+}
+async function openLead(id){
+  S.leadId=id;show('lead');
+  const l=(await api('GET','/v1/leads/'+id)).data;$('#ldName').textContent=l.name||id;
+  const p=$('#ldProfile');p.innerHTML='';
+  [['phone',l.phone],['email',l.email||'—'],['source',l.source],['stage',l.stage],['score',l.score],['close %',Math.round((l.close_probability||0)*100)+'%'],['attempts',l.attempts]]
+    .forEach(([k,v])=>{const r=el('div','kv');r.appendChild(el('span','k',k));r.appendChild(el('span',null,v==null?'—':v));p.appendChild(r);});
+  const sel=$('#ldStatus');sel.innerHTML='';
+  ['new','contacted','qualified','interested','converted','lost'].forEach(s=>{const o=el('option',null,s);o.value=s;if(s===l.status)o.selected=true;sel.appendChild(o);});
+  const cb=$('#ldCalls');cb.innerHTML='';
+  const calls=(await api('GET','/v1/leads/'+id+'/calls')).data||[];
+  if(!calls.length)cb.appendChild(el('div','empty','No calls yet.'));
+  calls.forEach(c=>{const r=el('div','kv');const left=el('div');left.appendChild(el('span','badge '+(c.outcome?'state':''),c.outcome||c.status));
+    if(c.summary){const s=el('div','muted');s.style.fontSize='12px';s.style.marginTop='4px';s.textContent=c.summary;left.appendChild(s);}
+    r.appendChild(left);r.appendChild(el('span','mono',when(c.started_at)+(c.duration_s!=null?' · '+fmtDur(c.duration_s):'')));cb.appendChild(r);});
+}
+async function setStatus(){await api('POST','/v1/leads/'+S.leadId+'/status',{status:$('#ldStatus').value});toast('Status updated');}
+function callThisLead(){show('calling');setTimeout(()=>selectCallLead(S.leadId),50);}
+function buildRail(active){const ul=$('#rail');ul.innerHTML='';const idx=active?STATES.indexOf(active):-1;
+  STATES.forEach((s,i)=>{const li=el('li','stage'+(i<idx?' done':'')+(i===idx?' active':''));li.appendChild(el('span','node'));li.appendChild(el('span',null,s));ul.appendChild(li);});}
+function renderChips(){const c=$('#chips');c.innerHTML='';CHIPS.forEach(t=>{const b=el('button','chip',t);b.onclick=()=>{$('#turnInput').value=t;$('#turnInput').focus();};c.appendChild(b);});}
+function meters(sc,pr){sc=sc||0;pr=pr||0;$('#scoreVal').textContent=sc;$('#scoreBar').style.width=Math.min(100,sc)+'%';const p=Math.round(pr*100);$('#probVal').textContent=p+'%';$('#probBar').style.width=p+'%';}
+async function loadCalling(){
+  const d=(await api('GET','/v1/leads')).data||[];const ul=$('#callLeads');ul.innerHTML='';
+  d.forEach(l=>{const li=el('div','kv');li.style.cursor='pointer';li.style.padding='9px 4px';li.onclick=()=>selectCallLead(l.id);
+    const c=el('div');c.appendChild(el('div',null,l.name||'—'));const m=el('div','mono muted');m.style.fontSize='11px';m.textContent=l.phone||l.id;c.appendChild(m);
+    li.appendChild(c);li.appendChild(el('span','mono',l.score||0));if(l.id===S.leadId)li.style.background='var(--line2)';ul.appendChild(li);});
+  if(S.leadId)selectCallLead(S.leadId);
+}
+async function selectCallLead(id){
+  S.leadId=id;const l=(await api('GET','/v1/leads/'+id)).data;
+  $('#cWho').textContent=l.name||id;$('#cWho').classList.remove('muted');
+  $('#startBtn').disabled=S.active;meters(l.score,l.close_probability);buildRail(S.active?l.stage:null);
+}
+$('#startBtn').onclick=async()=>{
+  if(!S.leadId){toast('Select a lead');return;}
+  if(!S.agentId){toast('No agent','warn');return;}
+  try{const d=(await api('POST','/v1/calls',{lead_id:S.leadId,agent_id:S.agentId})).data;
+    S.callId=d.call_id;S.active=true;$('#thread').innerHTML='';addMsg('agent',d.agent);setCall(true,d.state);buildRail(d.state);startDur();
+  }catch(e){toast('Blocked: '+(''+e.detail).replace('compliance_block:',''),'warn');}
+};
+function startDur(){S.durStart=Date.now();clearInterval(S.durTimer);S.durTimer=setInterval(()=>{$('#durVal').textContent=fmtDur((Date.now()-S.durStart)/1000);},1000);}
+function addMsg(role,text,tag){const t=$('#thread');if(t.querySelector('.empty'))t.innerHTML='';const m=el('div','msg '+role);m.appendChild(el('span','tag',tag||role));m.appendChild(document.createTextNode(text));t.appendChild(m);t.scrollTop=t.scrollHeight;}
+async function sendTurn(){
+  const text=$('#turnInput').value.trim();if(!text||!S.callId||!S.active)return;
+  $('#turnInput').value='';addMsg('lead',text);
+  let d;try{d=(await api('POST','/v1/calls/'+S.callId+'/turn',{text})).data;}catch(e){toast('Turn failed','stop');return;}
+  (d.tool_calls||[]).forEach(tc=>addMsg('tool','▸ '+(tc.tool||'')));
+  if(d.agent)addMsg('agent',d.agent);setState(d.state);buildRail(d.state);
+  if(d.handoff)toast('Handoff to human','warn');
+  try{const l=(await api('GET','/v1/leads/'+S.leadId)).data;meters(l.score,l.close_probability);}catch(e){}
+  if(d.ended)finishCall(d.state);
+}
+$('#turnInput').addEventListener('keydown',e=>{if(e.key==='Enter')sendTurn();});
+function setState(s){const b=$('#cState');b.textContent=s;b.className='badge state'+(s==='CLOSE'?' converted':'');}
+function setCall(on,s){$('#cState').classList.toggle('hidden',!on);$('#composer').classList.toggle('hidden',!on);$('#startBtn').classList.toggle('hidden',on);$('#endBtn').classList.toggle('hidden',!on);$('#transferBtn').classList.toggle('hidden',!on);if(on){setState(s);$('#turnInput').focus();}}
+function finishCall(s){S.active=false;clearInterval(S.durTimer);$('#composer').classList.add('hidden');$('#endBtn').classList.add('hidden');$('#transferBtn').classList.add('hidden');$('#startBtn').classList.remove('hidden');$('#startBtn').disabled=!S.leadId;if(s)setState(s);}
+async function endCall(){if(S.callId){try{await api('POST','/v1/calls/'+S.callId+'/end');}catch(e){}}finishCall('ended');toast('Call ended');}
+async function transferHuman(){if(!S.callId)return;try{await api('POST','/v1/calls/'+S.callId+'/transfer',{to:'+910000000000'});toast('Transferred to human');}catch(e){toast('Transfer failed','warn');}}
+async function loadHistory(){
+  const calls=(await api('GET','/v1/calls')).data||[];$('#histCount').textContent=calls.length+' calls';
+  const tb=$('#histRows');tb.innerHTML='';
+  calls.forEach(c=>{const tr=el('tr','click');tr.onclick=()=>histDetail(c);
+    tr.appendChild(el('td',null,c.lead_id||'—'));const o=el('td');o.appendChild(el('span','badge '+(c.outcome?'state':''),c.outcome||'—'));tr.appendChild(o);
+    tr.appendChild(el('td',null,c.status||'—'));tr.appendChild(el('td',null,when(c.started_at)));tb.appendChild(tr);});
+  if(!calls.length){const tr=el('tr');const td=el('td',null,'No calls yet.');td.colSpan=4;tr.appendChild(td);tb.appendChild(tr);}
+}
+async function histDetail(c){
+  const box=$('#histDetail');box.innerHTML='';
+  [['lead',c.lead_id],['status',c.status],['outcome',c.outcome||'—'],['started',when(c.started_at)]]
+    .forEach(([k,v])=>{const r=el('div','kv');r.appendChild(el('span','k',k));r.appendChild(el('span',null,v||'—'));box.appendChild(r);});
+  try{const conv=(await api('GET','/v1/conversations/'+c.id)).data;
+    if(conv&&conv.insights){const i=conv.insights;[['summary',i.summary],['sentiment',i.sentiment],['next action',i.next_action],['ai score',conv.score]]
+      .forEach(([k,v])=>{if(v){const r=el('div','kv');r.appendChild(el('span','k',k));r.appendChild(el('span',null,v));box.appendChild(r);}});}
+    if(conv&&conv.transcript){const h=el('div');h.style.marginTop='10px';
+      conv.transcript.forEach(m=>{const line=el('div');line.style.fontSize='13px';line.style.margin='4px 0';
+        line.innerHTML='<b class="mono" style="font-size:11px;color:var(--muted)">'+(m.role||'')+'</b> '+(m.text||'');h.appendChild(line);});box.appendChild(h);}
+  }catch(e){box.appendChild(el('div','muted','No transcript stored for this call.'));}
+}
+async function loadFollowups(){
+  const f=(await api('GET','/v1/followups')).data||[];const tb=$('#fuRows');tb.innerHTML='';
+  f.forEach(x=>{const tr=el('tr');
+    tr.appendChild(el('td',null,x.lead_id||'—'));tr.appendChild(el('td',null,x.reason||'—'));tr.appendChild(el('td',null,x.channel||'—'));tr.appendChild(el('td',null,when(x.due_at)));
+    const st=el('td');st.appendChild(el('span','badge',x.status));tr.appendChild(st);
+    const act=el('td');const c=el('button','btn xs ghost','Done');c.onclick=()=>fuAction(x.id,'complete');
+    const r=el('button','btn xs ghost','+1d');r.style.marginLeft='6px';r.onclick=()=>fuAction(x.id,'reschedule');
+    act.appendChild(c);act.appendChild(r);tr.appendChild(act);tb.appendChild(tr);});
+  if(!f.length){const tr=el('tr');const td=el('td',null,'No follow-ups yet.');td.colSpan=6;tr.appendChild(td);tb.appendChild(tr);}
+}
+async function fuAction(id,kind){
+  if(kind==='complete')await api('POST','/v1/followups/'+id+'/complete');
+  else await api('POST','/v1/followups/'+id+'/reschedule',{in_hours:24});
+  toast(kind==='complete'?'Marked complete':'Rescheduled +1d');loadFollowups();
+}
+async function runDue(){const r=await api('POST','/v1/scheduler/tick');toast('Ran '+((r.data&&r.data.count)||0)+' due');loadFollowups();}
+async function loadAgents(){
+  const a=(await api('GET','/v1/agents')).data||[];const sel=$('#agentPick');sel.innerHTML='';
+  a.forEach(x=>{const o=el('option',null,x.name||x.id);o.value=x.id;sel.appendChild(o);});
+  if(a.length){sel.value=S.agentId||a[0].id;loadAgent();}
+}
+async function loadAgent(){
+  const id=$('#agentPick').value;S.agentId=id;
+  const d=(await api('GET','/v1/agents/'+id+'/config')).data;if(!d)return;
+  const v=$('#agVoice');v.innerHTML='';(d.voices||[]).forEach(x=>{const o=el('option',null,x);o.value=x;if(x===d.voice)o.selected=true;v.appendChild(o);});
+  const pf=$('#agProfile');pf.innerHTML='';(d.voice_profiles||[]).forEach(x=>{const o=el('option',null,x);o.value=x;pf.appendChild(o);});
+  $('#agPersona').value=d.persona||'';
+  const b=$('#agBusiness');b.innerHTML='';const biz=d.business||{};
+  [['product',biz.product],['summary',biz.summary],['guarantee',biz.guarantee]].forEach(([k,val])=>{const r=el('div','kv');r.appendChild(el('span','k',k));r.appendChild(el('span',null,val||'—'));b.appendChild(r);});
+  if((biz.outcomes||[]).length){const r=el('div','kv');r.appendChild(el('span','k','outcomes'));r.appendChild(el('span',null,(biz.outcomes||[]).join(', ')));b.appendChild(r);}
+}
+async function saveAgent(){await api('POST','/v1/agents/'+$('#agentPick').value+'/config',{voice:$('#agVoice').value,persona:$('#agPersona').value});toast('Agent saved');}
+async function runSim(){
+  const d=(await api('POST','/v1/simulate',{prospect:$('#prospect').value})).data;
+  const t=$('#simThread');t.innerHTML='';
+  (d.transcript||[]).forEach(m=>{const cl=m.role==='lead'?'lead':'agent';const x=el('div','msg '+cl);x.appendChild(el('span','tag',m.role));x.appendChild(document.createTextNode(m.text));t.appendChild(x);});
+  t.scrollTop=t.scrollHeight;
+  const box=$('#simResult');box.innerHTML='';
+  [['final state',d.final_state],['score',d.score],['close %',Math.round((d.close_probability||0)*100)+'%'],['sentiment',d.insights&&d.insights.sentiment],['next action',d.next_action]]
+    .forEach(([k,v])=>{const r=el('div','kv');r.appendChild(el('span','k',k));r.appendChild(el('span',null,v==null?'—':v));box.appendChild(r);});
+  if(d.insights&&d.insights.objections&&d.insights.objections.length){const r=el('div','kv');r.appendChild(el('span','k','objections'));r.appendChild(el('span',null,d.insights.objections.join(', ')));box.appendChild(r);}
+}
+async function loadSettings(){
+  const d=(await api('GET','/v1/settings/integrations')).data;const box=$('#integ');box.innerHTML='';
+  [['Twilio','twilio'],['Deepgram','deepgram'],['ElevenLabs','elevenlabs'],['Anthropic / LLM','llm'],['WhatsApp','whatsapp']].forEach(([label,key])=>{
+    const it=d[key]||{};const row=el('div','integ');row.appendChild(el('div','nm',label));
+    const detail=el('div','muted');detail.style.fontSize='12px';detail.textContent=it.from_number||it.model||it.voice_id||it.provider||'';row.appendChild(detail);
+    row.appendChild(el('div','st '+(it.configured?'on':'off'),it.configured?'● connected':'○ not set'));box.appendChild(row);});
+  const db=el('div','integ');db.appendChild(el('div','nm','Database'));db.appendChild(el('div'));db.appendChild(el('div','st '+(d.database.engine==='postgres'?'on':'off'),d.database.engine));box.appendChild(db);
+  const au=el('div','integ');au.appendChild(el('div','nm','Auth / RBAC'));au.appendChild(el('div'));au.appendChild(el('div','st '+(d.auth.enabled?'on':'off'),d.auth.enabled?'enabled':'off (dev)'));box.appendChild(au);
+}
+boot();
+</script>
+</body>
+</html>
