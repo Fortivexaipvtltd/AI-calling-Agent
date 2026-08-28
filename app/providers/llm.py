@@ -42,6 +42,12 @@ class LLMResponder:
 
     def word(self, *, intent: str, lead: dict, product: dict, memory_facts: dict,
              objection: str | None, lead_text: str, history: list[dict]) -> str:
+        if self.provider == "byo" and settings.byo_api_key:
+            try:
+                return self._byo(intent, lead, product, memory_facts,
+                                 objection, lead_text, history)
+            except Exception:
+                pass
         if self.provider == "anthropic" and settings.anthropic_api_key:
             try:
                 return self._anthropic(intent, lead, product, memory_facts,
@@ -159,3 +165,101 @@ class LLMResponder:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.loads(resp.read().decode())
         return "".join(b.get("text", "") for b in data.get("content", []) if b.get("type") == "text").strip()
+
+    # ---- BYO endpoint (gemini | openai | anthropic protocols) -------------
+    def _byo_system(self, intent, lead, product, facts, objection) -> str:
+        goal = INTENT_GOAL.get(intent, "Move the sale forward naturally.")
+        return (
+            f"{GUARDRAILS}\n\n"
+            f"APPROVED FACTS: product={product.get('name','')}; "
+            f"outcomes={product.get('outcomes',[])}; guarantee={product.get('guarantee','')}; "
+            f"pricing={product.get('pricing_plans',[])}.\n"
+            f"NEVER_SAY: {product.get('never_say',[])}.\n"
+            f"KNOWN ABOUT LEAD: name={lead.get('name','')}; facts={facts}; "
+            f"open_objection={objection or 'none'}.\n"
+            f"YOUR GOAL THIS TURN: {goal}\n"
+            "Reply with only the spoken sentence, nothing else."
+        )
+
+    def _detect_protocol(self) -> str:
+        p = (settings.byo_protocol or "auto").lower()
+        if p != "auto":
+            return p
+        url = (settings.byo_base_url or "").lower()
+        if "generativelanguage" in url or "gemini" in url or "google" in url:
+            return "gemini"
+        if "anthropic" in url:
+            return "anthropic"
+        if "openai" in url or "/v1" in url:
+            return "openai"
+        # Key-shape heuristic: Google AI Studio keys start with AIza.
+        if settings.byo_api_key.startswith("AIza"):
+            return "gemini"
+        return "openai"
+
+    def _byo(self, intent, lead, product, facts, objection, lead_text, history) -> str:
+        proto = self._detect_protocol()
+        system = self._byo_system(intent, lead, product, facts, objection)
+        turns = [(m["role"], m["text"]) for m in history[-8:] if m.get("text")]
+        if lead_text:
+            turns.append(("lead", lead_text))
+        if not turns:
+            turns = [("lead", "(call just connected)")]
+        if proto == "gemini":
+            return self._byo_gemini(system, turns)
+        if proto == "anthropic":
+            return self._byo_anthropic(system, turns)
+        return self._byo_openai(system, turns)
+
+    def _byo_openai(self, system, turns) -> str:
+        base = settings.byo_base_url or "https://api.openai.com/v1"
+        msgs = [{"role": "system", "content": system}]
+        for role, text in turns:
+            msgs.append({"role": "assistant" if role == "agent" else "user",
+                         "content": text})
+        body = json.dumps({"model": settings.byo_model or "gpt-4o-mini",
+                           "max_tokens": 120, "messages": msgs}).encode()
+        req = urllib.request.Request(
+            base.rstrip("/") + "/chat/completions", data=body,
+            headers={"content-type": "application/json",
+                     "authorization": f"Bearer {settings.byo_api_key}"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        return data["choices"][0]["message"]["content"].strip()
+
+    def _byo_anthropic(self, system, turns) -> str:
+        base = settings.byo_base_url or "https://api.anthropic.com"
+        msgs = [{"role": "assistant" if r == "agent" else "user", "content": t}
+                for r, t in turns]
+        body = json.dumps({"model": settings.byo_model or "claude-sonnet-4-6",
+                           "max_tokens": 120, "system": system, "messages": msgs}).encode()
+        req = urllib.request.Request(
+            base.rstrip("/") + "/v1/messages", data=body,
+            headers={"content-type": "application/json",
+                     "x-api-key": settings.byo_api_key,
+                     "anthropic-version": "2023-06-01"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        return "".join(b.get("text", "") for b in data.get("content", [])
+                       if b.get("type") == "text").strip()
+
+    def _byo_gemini(self, system, turns) -> str:
+        model = settings.byo_model or "gemini-1.5-flash"
+        base = settings.byo_base_url or "https://generativelanguage.googleapis.com/v1beta"
+        contents = []
+        for role, text in turns:
+            contents.append({"role": "model" if role == "agent" else "user",
+                             "parts": [{"text": text}]})
+        body = json.dumps({
+            "systemInstruction": {"parts": [{"text": system}]},
+            "contents": contents,
+            "generationConfig": {"maxOutputTokens": 120, "temperature": 0.7},
+        }).encode()
+        url = f"{base.rstrip('/')}/models/{model}:generateContent?key={settings.byo_api_key}"
+        req = urllib.request.Request(url, data=body,
+                                     headers={"content-type": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            data = json.loads(resp.read().decode())
+        cand = (data.get("candidates") or [{}])[0]
+        parts = (cand.get("content") or {}).get("parts") or [{}]
+        return "".join(p.get("text", "") for p in parts).strip()

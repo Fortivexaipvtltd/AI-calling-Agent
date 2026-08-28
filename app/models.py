@@ -269,3 +269,97 @@ class CallState(Base):
     snapshot: Mapped[dict] = mapped_column(JSON, default=dict)
     active: Mapped[bool] = mapped_column(default=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class DoNotCall(Base):
+    """Suppression / DNC list. A phone here is never dialed by the campaign
+    dialer (or ad-hoc calls that check it). Populated by opt-outs and imports."""
+
+    __tablename__ = "do_not_call"
+    phone: Mapped[str] = mapped_column(String, primary_key=True)
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    reason: Mapped[str] = mapped_column(String, default="opt_out")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class CampaignTask(Base):
+    """One dial attempt in a campaign run — the durable unit of work the dialer
+    picks up, so a bulk run survives restarts and is safe across workers."""
+
+    __tablename__ = "campaign_tasks"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: _id("ct"))
+    campaign_id: Mapped[str] = mapped_column(String, index=True)
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    lead_id: Mapped[str] = mapped_column(String, index=True)
+    status: Mapped[str] = mapped_column(String, default="queued")  # queued|dialing|done|skipped|failed
+    outcome: Mapped[str] = mapped_column(String, default="")
+    attempts: Mapped[int] = mapped_column(default=0)
+    next_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+    provider_call_id: Mapped[str] = mapped_column(String, default="")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)
+
+
+class KnowledgeDoc(Base):
+    """A source document for RAG (brochure text, FAQ, policy). Chunked into
+    KnowledgeChunk rows for retrieval. Scoped by org for multi-tenant safety."""
+
+    __tablename__ = "knowledge_docs"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: _id("kb"))
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    title: Mapped[str] = mapped_column(String, default="")
+    source: Mapped[str] = mapped_column(String, default="upload")
+    chunks: Mapped[int] = mapped_column(default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class KnowledgeChunk(Base):
+    """One retrievable passage of a KnowledgeDoc."""
+
+    __tablename__ = "knowledge_chunks"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: _id("kc"))
+    doc_id: Mapped[str] = mapped_column(String, index=True)
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    title: Mapped[str] = mapped_column(String, default="")
+    text: Mapped[str] = mapped_column(String, default="")
+    ord: Mapped[int] = mapped_column(default=0)
+
+
+class EventLog(Base):
+    """Append-only audit / event-sourcing log: every meaningful action is a row
+    (who, what, which tenant, payload). Immutable — never updated or deleted."""
+
+    __tablename__ = "event_log"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: _id("evt"))
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    actor: Mapped[str] = mapped_column(String, default="system")
+    action: Mapped[str] = mapped_column(String, index=True)
+    entity: Mapped[str] = mapped_column(String, default="")
+    entity_id: Mapped[str] = mapped_column(String, default="", index=True)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now, index=True)
+
+
+class Experiment(Base):
+    """An A/B test over variants (scripts/prompts/voices). Tracks per-variant
+    exposures + conversions; a bandit picks which variant to serve next."""
+
+    __tablename__ = "experiments"
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: _id("exp"))
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    name: Mapped[str] = mapped_column(String, default="")
+    kind: Mapped[str] = mapped_column(String, default="script")  # script|prompt|voice
+    status: Mapped[str] = mapped_column(String, default="running")
+    variants: Mapped[dict] = mapped_column(JSON, default=dict)  # {name: {trials,conversions,text}}
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=now)
+
+
+class LeadScore(Base):
+    """Latest predictive score snapshot for a lead (propensity + reasons)."""
+
+    __tablename__ = "lead_scores"
+    lead_id: Mapped[str] = mapped_column(String, primary_key=True)
+    org_id: Mapped[str] = mapped_column(String, default="", index=True)
+    propensity: Mapped[float] = mapped_column(default=0.0)
+    grade: Mapped[str] = mapped_column(String, default="C")
+    reasons: Mapped[dict] = mapped_column(JSON, default=list)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=now, onupdate=now)

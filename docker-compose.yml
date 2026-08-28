@@ -26,6 +26,7 @@ services:
       AUTH_ENABLED: "1"
       API_KEYS: ${API_KEYS:?set at least one API key for production}
       CORS_ORIGINS: ${CORS_ORIGINS:-https://app.example.com}
+      TRUSTED_HOSTS: ${TRUSTED_HOSTS:-*}
       RBAC_ENABLED: "1"
       RATE_LIMIT_PER_MIN: "120"
       WEB_CONCURRENCY: "3"

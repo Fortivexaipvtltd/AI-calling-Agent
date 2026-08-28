@@ -103,6 +103,16 @@ def finalize_call(db: Session, call: Call, rt: AgentRuntime) -> CallInsight:
                         due_at=datetime.utcnow() + timedelta(hours=delay)))
 
     db.flush()
+
+    # Feed monitoring: talk minutes -> cost + a synthetic latency sample.
+    try:
+        from .business.analytics import _call_minutes, call_cost
+        from .observability.monitoring import monitor
+        mins = _call_minutes(call)
+        monitor.record_call(ok=call.outcome not in ("failed", "no_answer"),
+                            latency_ms=0.0, cost_usd=call_cost(mins))
+    except Exception:
+        pass
     return ins
 
 

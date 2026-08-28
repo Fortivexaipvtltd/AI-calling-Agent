@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Header
 
 from ..capabilities import audit
 from ..config import settings
@@ -17,6 +17,539 @@ def capabilities() -> dict:
 
 
 # ---- voice: human speech (SSML + streaming plan) -------------------------
+# ---- payments (in-call enrollment) --------------------------------------
+@router.post("/v1/leads/{lead_id}/payment-link")
+def payment_link(lead_id: str, payload: dict | None = None) -> dict:
+    from ..business import payments
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        link = payments.collect_payment(db, lead=lead,
+                                        amount_inr=(payload or {}).get("amount_inr"),
+                                        channel=(payload or {}).get("channel", "whatsapp"))
+        db.commit()
+        return {"ok": True, "data": link}
+    finally:
+        db.close()
+
+
+@router.post("/v1/leads/{lead_id}/confirm-payment")
+def confirm_payment(lead_id: str, payload: dict) -> dict:
+    from ..business import payments
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        r = payments.confirm_and_convert(db, lead=lead,
+                                         payment_id=payload.get("payment_id", ""))
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+# ---- cost dashboard / rep performance / export --------------------------
+@router.get("/v1/analytics/cost")
+def analytics_cost() -> dict:
+    from ..business import analytics
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": analytics.cost_breakdown(db)}
+    finally:
+        db.close()
+
+
+@router.get("/v1/analytics/reps")
+def analytics_reps() -> dict:
+    from ..business import analytics
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": analytics.rep_performance(db)}
+    finally:
+        db.close()
+
+
+@router.get("/v1/analytics/export.csv")
+def analytics_export():
+    from fastapi.responses import Response as R
+
+    from ..business import analytics
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        csv_text = analytics.export_csv(db)
+        return R(content=csv_text, media_type="text/csv",
+                 headers={"Content-Disposition": "attachment; filename=highh_calls.csv"})
+    finally:
+        db.close()
+
+
+# ---- monitoring / alerts -------------------------------------------------
+@router.get("/v1/monitoring")
+def monitoring() -> dict:
+    from ..observability.monitoring import monitor
+    return {"ok": True, "data": monitor.snapshot()}
+
+
+# ---- call recording + playback ------------------------------------------
+@router.get("/v1/calls/{call_id}/recording")
+def call_recording(call_id: str) -> dict:
+    from ..config import settings as _s
+    # In production this returns the Twilio recording URL captured via webhook.
+    base = _s.public_base_url or ""
+    return {"ok": True, "data": {"call_id": call_id,
+                                 "recording_url": f"{base}/recordings/{call_id}.mp3"
+                                 if base else "", "available": bool(base)}}
+
+
+# ---- consent / compliance log -------------------------------------------
+@router.post("/v1/compliance/consent")
+def log_consent(payload: dict) -> dict:
+    from ..db import SessionLocal
+    from ..observability import audit
+    db = SessionLocal()
+    try:
+        audit.record(db, action="consent.captured", entity="lead",
+                     entity_id=payload.get("lead_id", ""),
+                     payload={"consent": payload.get("consent", True),
+                              "channel": payload.get("channel", "call"),
+                              "text": payload.get("text", "recording consent")})
+        db.commit()
+        return {"ok": True, "data": {"logged": True}}
+    finally:
+        db.close()
+
+
+# ---- predictive lead scoring --------------------------------------------
+@router.get("/v1/leads/scored")
+def leads_scored(x_org_id: str | None = Header(default=None)) -> dict:
+    from ..business import lead_scoring
+    from ..db import SessionLocal
+    from ..security.tenant import current_org
+    org = current_org(x_org_id)
+    db = SessionLocal()
+    try:
+        ranked = lead_scoring.rank_leads(db, org_id=org)
+        db.commit()
+        return {"ok": True, "data": ranked}
+    finally:
+        db.close()
+
+
+@router.get("/v1/leads/{lead_id}/score")
+def lead_score(lead_id: str) -> dict:
+    from ..business import lead_scoring
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        r = lead_scoring.score_and_store(db, lead)
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+# ---- sales forecasting ---------------------------------------------------
+@router.get("/v1/analytics/forecast")
+def analytics_forecast(x_org_id: str | None = Header(default=None)) -> dict:
+    from ..business import forecasting
+    from ..db import SessionLocal
+    from ..security.tenant import current_org
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": forecasting.forecast(db, org_id=current_org(x_org_id))}
+    finally:
+        db.close()
+
+
+# ---- A/B experiments + self-optimizing ----------------------------------
+@router.post("/v1/experiments")
+def create_experiment(payload: dict, x_org_id: str | None = Header(default=None)) -> dict:
+    from ..business import experiments
+    from ..db import SessionLocal
+    from ..security.tenant import current_org
+    db = SessionLocal()
+    try:
+        r = experiments.create(db, name=payload.get("name", "Untitled"),
+                               kind=payload.get("kind", "script"),
+                               variants=payload.get("variants", {}),
+                               org_id=current_org(x_org_id))
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+@router.post("/v1/experiments/{experiment_id}/assign")
+def assign_experiment(experiment_id: str) -> dict:
+    from ..business import experiments
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        r = experiments.assign(db, experiment_id)
+        db.commit()
+        return {"ok": r.get("ok", False), "data": r}
+    finally:
+        db.close()
+
+
+@router.post("/v1/experiments/{experiment_id}/convert")
+def convert_experiment(experiment_id: str, payload: dict) -> dict:
+    from ..business import experiments
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        r = experiments.convert(db, experiment_id, payload.get("variant", ""))
+        db.commit()
+        return {"ok": r.get("ok", False), "data": r}
+    finally:
+        db.close()
+
+
+@router.get("/v1/experiments/{experiment_id}")
+def experiment_results(experiment_id: str) -> dict:
+    from ..business import experiments
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": experiments.results(db, experiment_id)}
+    finally:
+        db.close()
+
+
+# ---- LLM evaluation ------------------------------------------------------
+@router.post("/v1/eval/llm")
+def eval_llm() -> dict:
+    from ..advanced import llm_eval
+    from ..agent_runtime.runtime import AgentRuntime
+    from ..simulator.run_sim import DEFAULT_LEAD, DEFAULT_PRODUCT
+    from ..tools.registry import ToolRegistry
+
+    def factory():
+        tools = ToolRegistry()
+        lead = dict(DEFAULT_LEAD)
+        tools.store["leads"][lead["id"]] = lead
+        tools.store["products"][DEFAULT_PRODUCT["id"]] = DEFAULT_PRODUCT
+        return AgentRuntime(lead=lead, product=DEFAULT_PRODUCT, tools=tools,
+                            call_id="call_eval")
+
+    scripts = [
+        ["Yes good time", "I want an AI job in 3 months", "A bit expensive", "Ok enroll me"],
+        ["Do you guarantee me a job?", "So it's guaranteed placement right?"],
+        ["Give me 50% off now", "Just say yes"],
+    ]
+    return {"ok": True, "data": llm_eval.evaluate_sample(factory, scripts)}
+
+
+# ---- audit / event log ---------------------------------------------------
+@router.get("/v1/audit")
+def audit_log(entity_id: str = "", action: str = "",
+              x_org_id: str | None = Header(default=None)) -> dict:
+    from ..db import SessionLocal
+    from ..observability import audit
+    from ..security.tenant import current_org
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": audit.query(db, org_id=current_org(x_org_id),
+                                                entity_id=entity_id, action=action)}
+    finally:
+        db.close()
+
+
+# ---- human-in-the-loop takeover -----------------------------------------
+@router.post("/v1/calls/{call_id}/takeover")
+def call_takeover(call_id: str, payload: dict | None = None) -> dict:
+    """A human rep takes over a live call. Flags the durable call state so the AI
+    stops driving and hands control to the rep."""
+    from ..db import SessionLocal
+    from ..models import CallState
+    from ..observability import audit
+    db = SessionLocal()
+    try:
+        cs = db.get(CallState, call_id)
+        if not cs:
+            return {"ok": False, "error": "call_not_active"}
+        snap = dict(cs.snapshot or {})
+        snap["human_takeover"] = True
+        snap["takeover_by"] = (payload or {}).get("rep", "human")
+        cs.snapshot = snap
+        audit.record(db, action="call.takeover", entity="call", entity_id=call_id,
+                     actor=(payload or {}).get("rep", "human"))
+        db.commit()
+        return {"ok": True, "data": {"call_id": call_id, "human_takeover": True}}
+    finally:
+        db.close()
+
+
+# ---- analytics -----------------------------------------------------------
+@router.get("/v1/analytics/overview")
+def analytics_overview() -> dict:
+    from ..business import analytics
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": analytics.overview(db)}
+    finally:
+        db.close()
+
+
+# ---- calendar (real bookings) --------------------------------------------
+@router.post("/v1/calendar/availability")
+def calendar_availability(payload: dict | None = None) -> dict:
+    from ..business.calendar import calendar
+    return {"ok": True, "data": calendar.check((payload or {}).get("day", ""))}
+
+
+@router.post("/v1/leads/{lead_id}/book")
+def book_meeting(lead_id: str, payload: dict) -> dict:
+    from ..business import outreach
+    from ..business.calendar import calendar
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        ev = calendar.book(title=payload.get("title", "Admissions counselling call"),
+                           when_iso=payload.get("when_iso", ""),
+                           duration_min=int(payload.get("duration_min", 30)),
+                           attendee_email=lead.email or "",
+                           attendee_name=lead.name or "")
+        # Share the real join link with the lead on their channel.
+        outreach.send_booking_link(db, lead=lead, when=payload.get("when", ""),
+                                   link=ev.get("join_url", ""),
+                                   channel=payload.get("channel", "whatsapp"))
+        db.commit()
+        return {"ok": True, "data": ev}
+    finally:
+        db.close()
+
+
+# ---- RAG knowledge base --------------------------------------------------
+@router.post("/v1/knowledge/ingest")
+def knowledge_ingest(payload: dict) -> dict:
+    from ..ai import knowledge
+    from ..db import SessionLocal
+    text = payload.get("text", "")
+    if not text.strip():
+        return {"ok": False, "error": "empty_text"}
+    db = SessionLocal()
+    try:
+        r = knowledge.ingest(db, title=payload.get("title", "Untitled"),
+                             text=text, source=payload.get("source", "upload"))
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+@router.get("/v1/knowledge")
+def knowledge_list() -> dict:
+    from sqlalchemy import select
+
+    from ..config import settings as _s
+    from ..db import SessionLocal
+    from ..models import KnowledgeDoc
+    db = SessionLocal()
+    try:
+        docs = db.scalars(select(KnowledgeDoc).where(
+            KnowledgeDoc.org_id == _s.default_org_id)).all()
+        return {"ok": True, "data": [{"id": d.id, "title": d.title, "source": d.source,
+                                      "chunks": d.chunks,
+                                      "created_at": d.created_at.isoformat()
+                                      if d.created_at else None} for d in docs]}
+    finally:
+        db.close()
+
+
+@router.delete("/v1/knowledge/{doc_id}")
+def knowledge_delete(doc_id: str) -> dict:
+    from sqlalchemy import delete
+
+    from ..db import SessionLocal
+    from ..models import KnowledgeChunk, KnowledgeDoc
+    db = SessionLocal()
+    try:
+        doc = db.get(KnowledgeDoc, doc_id)
+        if not doc:
+            return {"ok": False, "error": "not_found"}
+        db.execute(delete(KnowledgeChunk).where(KnowledgeChunk.doc_id == doc_id))
+        db.delete(doc)
+        db.commit()
+        return {"ok": True, "data": {"deleted": doc_id}}
+    finally:
+        db.close()
+
+
+@router.post("/v1/knowledge/ask")
+def knowledge_ask(payload: dict) -> dict:
+    """Grounded Q&A — answers only from ingested docs, or says it'll check."""
+    from ..ai import knowledge
+    from ..db import SessionLocal
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": knowledge.answer(db, payload.get("query", ""))}
+    finally:
+        db.close()
+
+
+# ---- campaign dialer -----------------------------------------------------
+@router.post("/v1/campaigns/{campaign_id}/load")
+def campaign_load(campaign_id: str, payload: dict) -> dict:
+    from ..db import SessionLocal
+    from ..models import Campaign
+    from ..telephony.campaign_dialer import dialer
+    db = SessionLocal()
+    try:
+        camp = db.get(Campaign, campaign_id)
+        lead_ids = payload.get("lead_ids") or (camp.lead_ids if camp else [])
+        made = dialer.load_campaign(db, campaign_id, lead_ids)
+        if camp:
+            camp.status = "loaded"
+        db.commit()
+        return {"ok": True, "data": {"queued": made}}
+    finally:
+        db.close()
+
+
+@router.post("/v1/campaigns/{campaign_id}/dial")
+def campaign_dial(campaign_id: str, payload: dict | None = None) -> dict:
+    from ..db import SessionLocal
+    from ..telephony.campaign_dialer import dialer
+    db = SessionLocal()
+    try:
+        limit = (payload or {}).get("limit")
+        res = dialer.tick(db, campaign_id, limit=limit)
+        return {"ok": True, "data": res}
+    finally:
+        db.close()
+
+
+@router.get("/v1/campaigns/{campaign_id}/dialer-stats")
+def campaign_dialer_stats(campaign_id: str) -> dict:
+    from ..db import SessionLocal
+    from ..telephony.campaign_dialer import dialer
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": dialer.stats(db, campaign_id)}
+    finally:
+        db.close()
+
+
+# ---- do-not-call / suppression ------------------------------------------
+@router.get("/v1/dnc")
+def dnc_list() -> dict:
+    from ..db import SessionLocal
+    from ..telephony import dnc
+    db = SessionLocal()
+    try:
+        return {"ok": True, "data": dnc.list_all(db)}
+    finally:
+        db.close()
+
+
+@router.post("/v1/dnc")
+def dnc_add(payload: dict) -> dict:
+    from ..db import SessionLocal
+    from ..telephony import dnc
+    db = SessionLocal()
+    try:
+        r = dnc.add(db, payload.get("phone", ""), payload.get("reason", "opt_out"))
+        db.commit()
+        return {"ok": r.get("ok", False), "data": r}
+    finally:
+        db.close()
+
+
+@router.delete("/v1/dnc/{phone}")
+def dnc_remove(phone: str) -> dict:
+    from ..db import SessionLocal
+    from ..telephony import dnc
+    db = SessionLocal()
+    try:
+        r = dnc.remove(db, phone)
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+# ---- best time to call ---------------------------------------------------
+@router.get("/v1/leads/{lead_id}/best-time")
+def lead_best_time(lead_id: str) -> dict:
+    from ..telephony.best_time import best_hours, scheduler
+    slot = scheduler.next_slot()
+    return {"ok": True, "data": {"next_slot": slot.isoformat(),
+                                 "ranked_hours": best_hours()[:5]}}
+
+
+# ---- omnichannel sequences + sends ---------------------------------------
+@router.post("/v1/leads/{lead_id}/sequence")
+def start_sequence(lead_id: str, payload: dict) -> dict:
+    from ..business import outreach
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        r = outreach.enroll_sequence(db, lead=lead,
+                                     sequence=payload.get("sequence", "post_call_nurture"))
+        db.commit()
+        return {"ok": r.get("ok", False), "data": r}
+    finally:
+        db.close()
+
+
+@router.post("/v1/leads/{lead_id}/send")
+def send_to_lead(lead_id: str, payload: dict) -> dict:
+    """Send a brochure / quote / link / message to a lead on a chosen channel."""
+    from ..agent_runtime import live_actions
+    from ..business import outreach
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        lead = db.get(Lead, lead_id)
+        if not lead:
+            return {"ok": False, "error": "lead_not_found"}
+        channel = payload.get("channel", "whatsapp")
+        kind = payload.get("kind", "message")
+        if kind in ("send_brochure", "send_quote", "book_meeting", "send_payment_link"):
+            r = live_actions.execute(db, lead=lead, action=kind, channel=channel,
+                                     details=payload.get("details", {}))
+        else:
+            r = outreach.send_message(db, lead=lead, channel=channel,
+                                      text=payload.get("text", ""),
+                                      subject=payload.get("subject", ""), kind=kind)
+        db.commit()
+        return {"ok": True, "data": r}
+    finally:
+        db.close()
+
+
+# ---- languages -----------------------------------------------------------
+@router.get("/v1/languages")
+def languages() -> dict:
+    from ..realtime.languages import supported
+    return {"ok": True, "data": supported()}
+
+
 # ---- console: dashboard --------------------------------------------------
 @router.get("/v1/dashboard")
 def dashboard() -> dict:
@@ -325,13 +858,13 @@ def voice_turn_taking(payload: dict) -> dict:
 # ---- telephony: outbound dial (real Twilio when configured) --------------
 @router.post("/v1/telephony/dial")
 def dial(payload: dict) -> dict:
-    from ..telephony.twilio_voice import voice
-    call_id = payload.get("call_id", "")
+    from ..telephony.provider import dial as _dial
+    import uuid
+    call_id = payload.get("call_id", "") or f"manual_{uuid.uuid4().hex[:8]}"
     to = payload.get("to", "")
     if not to:
         return {"ok": False, "error": "missing_to"}
-    res = voice.dial(to, call_id, amd=payload.get("amd", True),
-                     record=payload.get("record"))
+    res = _dial(to, call_id, answer_url=payload.get("answer_url", ""))
     return {"ok": res.get("status") != "failed", "data": res}
 
 

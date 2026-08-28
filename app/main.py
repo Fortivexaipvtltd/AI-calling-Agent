@@ -75,6 +75,9 @@ app.include_router(extensions_router, dependencies=[Depends(get_principal)])
 from .routers.telephony_webhooks import router as twilio_router  # noqa: E402
 
 app.include_router(twilio_router)
+from .routers.exotel_webhooks import router as exotel_router  # noqa: E402
+
+app.include_router(exotel_router)
 
 error_handlers.register(app)
 app.add_middleware(RequestContextMiddleware)
@@ -330,15 +333,64 @@ def call_turn(call_id: str, body: TurnIn, db: Session = Depends(get_db)) -> Ok:
         _LIVE[call_id] = {"rt": rt, "call_id": call_id, "lead_id": lead_id}
     turn = rt.handle(body.text)
     bus.emit("conversation.turn", {"call_id": call_id, "state": turn.state})
+    lead = db.get(Lead, lead_id)
+
+    # Human-in-the-loop: if a rep has taken over this call, the AI stands down.
+    from .models import CallState
+    _cs = db.get(CallState, call_id)
+    if _cs and (_cs.snapshot or {}).get("human_takeover"):
+        save_call_state(db, rt, lead_id, "", active=True)
+        db.commit()
+        return Ok(data={"agent": "", "state": turn.state, "ended": False,
+                        "human_takeover": True, "tool_calls": [], "actions": [],
+                        "grounded": None, "handoff": None})
+
+    # Live in-call actions: if the agent offered to send a brochure/quote/link or
+    # book a meeting, do it for real and record it to the CRM timeline.
+    from .agent_runtime import live_actions
+    action_records = live_actions.run_detected(
+        db, lead=lead, agent_text=turn.agent_text, lead_text=body.text)
 
     # Save all details after every turn.
-    lead = db.get(Lead, lead_id)
     persist_turn(db, lead, rt)
     save_call_state(db, rt, lead_id, "", active=not turn.ended)
     db.commit()
 
+    # Grounded knowledge: if the lead asked something, retrieve an approved fact
+    # from the knowledge base so answers stay accurate (no hallucination).
+    grounded = None
+    if "?" in body.text or any(w in body.text.lower() for w in
+                               ("how much", "fee", "fees", "price", "cost", "what",
+                                "when", "duration", "placement", "guarantee")):
+        try:
+            from .ai import knowledge
+            g = knowledge.answer(db, body.text)
+            if g.get("grounded"):
+                grounded = {"answer": g["answer"], "citations": g["citations"]}
+        except Exception:
+            grounded = None
+
+    # Live sentiment + next-best-action for the calling screen.
+    signals = None
+    try:
+        from .advanced.conversation_intelligence import ConversationIntelligence
+        ci = ConversationIntelligence()
+        sig = ci.observe(body.text)
+        nba = ci.next_best_action()
+        sval = getattr(sig, "sentiment", 0.0)
+        label = "positive" if sval > 0.2 else "negative" if sval < -0.2 else "neutral"
+        signals = {"sentiment": label, "sentiment_score": round(sval, 2),
+                   "buying_intent": round(getattr(sig, "buying_intent", 0.0), 2),
+                   "risk": getattr(sig, "risk", ""),
+                   "next_best_action": nba.get("action") if isinstance(nba, dict) else str(nba)}
+    except Exception:
+        signals = None
+
     resp = {"agent": turn.agent_text, "state": turn.state, "ended": turn.ended,
-            "tool_calls": turn.tool_calls, "handoff": turn.handoff}
+            "tool_calls": turn.tool_calls + [{"tool": a.get("action"),
+                                              "channel": a.get("channel")} for a in action_records],
+            "actions": action_records, "grounded": grounded, "signals": signals,
+            "handoff": turn.handoff}
     if turn.ended:
         call = db.get(Call, call_id)
         persist_conversation(db, call, rt)

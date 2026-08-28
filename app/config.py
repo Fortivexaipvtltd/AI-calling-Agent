@@ -3,10 +3,12 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
+from dotenv import load_dotenv
+load_dotenv()
+
 
 def _env(key: str, default: str) -> str:
     return os.environ.get(key, default)
-
 
 @dataclass
 class Settings:
@@ -16,7 +18,7 @@ class Settings:
     redis_url: str = _env("REDIS_URL", "memory://")
 
     # LLM / voice provider stubs (deterministic local engines by default)
-    llm_provider: str = _env("LLM_PROVIDER", "local")  # local | anthropic
+    llm_provider: str = _env("LLM_PROVIDER", "local")  # local | anthropic | byo
     llm_model: str = _env("LLM_MODEL", "claude-sonnet-4-6")
     anthropic_api_key: str = _env("ANTHROPIC_API_KEY", "")
     stt_provider: str = _env("STT_PROVIDER", "local")  # local | deepgram
@@ -24,7 +26,14 @@ class Settings:
     tts_provider: str = _env("TTS_PROVIDER", "local")  # local | elevenlabs
     tts_api_key: str = _env("TTS_API_KEY", "")
     tts_voice_id: str = _env("TTS_VOICE_ID", "")
-    telephony_provider: str = _env("TELEPHONY_PROVIDER", "local")  # local | twilio
+    telephony_provider: str = _env("TELEPHONY_PROVIDER", "local")  # local | twilio | exotel
+    exotel_sid: str = _env("EXOTEL_SID", "")
+    exotel_api_key: str = _env("EXOTEL_API_KEY", "")
+    exotel_api_token: str = _env("EXOTEL_API_TOKEN", "")
+    exotel_caller_id: str = _env("EXOTEL_CALLER_ID", "")
+    exotel_subdomain: str = _env("EXOTEL_SUBDOMAIN", "api.exotel.com")
+    exotel_region: str = _env("EXOTEL_REGION", "in")  # in | sg | us
+    exotel_flow_app_id: str = _env("EXOTEL_FLOW_APP_ID", "")  # App Bazaar flow (voicebot)
     twilio_account_sid: str = _env("TWILIO_ACCOUNT_SID", "")
     twilio_auth_token: str = _env("TWILIO_AUTH_TOKEN", "")
     twilio_from_number: str = _env("TWILIO_FROM_NUMBER", "")
@@ -60,6 +69,11 @@ class Settings:
     max_retries_per_lead: int = int(_env("MAX_RETRIES_PER_LEAD", "3"))
     retry_backoff_minutes: int = int(_env("RETRY_BACKOFF_MINUTES", "60"))
 
+    # ---- campaign dialer ------------------------------------------------
+    dialer_max_concurrent: int = int(_env("DIALER_MAX_CONCURRENT", "5"))
+    dialer_calls_per_min: int = int(_env("DIALER_CALLS_PER_MIN", "20"))
+    dialer_default_timezone: str = _env("DIALER_TIMEZONE", "Asia/Kolkata")
+
     # ---- model routing / BYO --------------------------------------------
     # comma-separated provider preference lists; router tries left to right.
     llm_route: str = _env("LLM_ROUTE", "local,anthropic,openai,azure,google")
@@ -68,15 +82,54 @@ class Settings:
     byo_base_url: str = _env("BYO_BASE_URL", "")             # OpenAI-compatible endpoint
     byo_api_key: str = _env("BYO_API_KEY", "")
     byo_model: str = _env("BYO_MODEL", "")
+    byo_protocol: str = _env("BYO_PROTOCOL", "auto")  # auto | gemini | openai | anthropic
 
     # ---- channels -------------------------------------------------------
     whatsapp_provider: str = _env("WHATSAPP_PROVIDER", "local")   # local | meta | twilio
     whatsapp_token: str = _env("WHATSAPP_TOKEN", "")
     whatsapp_phone_id: str = _env("WHATSAPP_PHONE_ID", "")
 
+    # ---- SMS + email (omnichannel follow-ups) ---------------------------
+    sms_provider: str = _env("SMS_PROVIDER", "local")             # local | twilio
+    sms_from: str = _env("SMS_FROM", "")
+    email_provider: str = _env("EMAIL_PROVIDER", "local")         # local | smtp
+    smtp_host: str = _env("SMTP_HOST", "")
+    smtp_port: int = int(_env("SMTP_PORT", "587"))
+    smtp_user: str = _env("SMTP_USER", "")
+    smtp_password: str = _env("SMTP_PASSWORD", "")
+    email_from: str = _env("EMAIL_FROM", "admissions@example.com")
+    brochure_url: str = _env("BROCHURE_URL", "https://example.com/brochure.pdf")
+
     # ---- ai extras ------------------------------------------------------
     mcp_servers: str = _env("MCP_SERVERS", "")               # comma-separated base URLs
     rag_top_k: int = int(_env("RAG_TOP_K", "4"))
+
+    # ---- analytics cost model (per-call, USD) ---------------------------
+    cost_twilio_per_min: float = float(_env("COST_TWILIO_PER_MIN", "0.014"))
+    cost_stt_per_min: float = float(_env("COST_STT_PER_MIN", "0.0043"))
+    cost_tts_per_min: float = float(_env("COST_TTS_PER_MIN", "0.03"))
+    cost_llm_per_call: float = float(_env("COST_LLM_PER_CALL", "0.01"))
+
+    # ---- calendar (real bookings) --------------------------------------
+    calendar_provider: str = _env("CALENDAR_PROVIDER", "local")  # local | google | outlook
+    calendar_token: str = _env("CALENDAR_TOKEN", "")
+    calendar_id: str = _env("CALENDAR_ID", "primary")
+
+    # ---- payments (in-call enrollment) ----------------------------------
+    payment_provider: str = _env("PAYMENT_PROVIDER", "local")    # local | razorpay
+    razorpay_key_id: str = _env("RAZORPAY_KEY_ID", "")
+    razorpay_key_secret: str = _env("RAZORPAY_KEY_SECRET", "")
+    payment_amount_inr: int = int(_env("PAYMENT_AMOUNT_INR", "50000"))
+
+    # ---- RAG embeddings -------------------------------------------------
+    embeddings_provider: str = _env("EMBEDDINGS_PROVIDER", "local")  # local | openai | voyage
+    embeddings_api_key: str = _env("EMBEDDINGS_API_KEY", "")
+    embeddings_model: str = _env("EMBEDDINGS_MODEL", "text-embedding-3-small")
+
+    # ---- monitoring / alerts --------------------------------------------
+    alert_webhook_url: str = _env("ALERT_WEBHOOK_URL", "")       # Slack/webhook
+    alert_latency_ms: int = int(_env("ALERT_LATENCY_MS", "1500"))
+    alert_cost_per_call_usd: float = float(_env("ALERT_COST_PER_CALL_USD", "0.5"))
 
     # ---- billing / rbac -------------------------------------------------
     price_per_call_minute_inr: float = float(_env("PRICE_PER_CALL_MINUTE_INR", "3.0"))

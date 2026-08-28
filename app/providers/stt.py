@@ -15,17 +15,20 @@ class STTProvider:
         self.provider = provider or settings.stt_provider
 
     def transcribe(self, *, words: list[str] | None = None,
-                   audio: bytes | None = None, content_type: str = "audio/wav") -> dict:
+                   audio: bytes | None = None, content_type: str = "audio/wav",
+                   language: str = "en") -> dict:
         if self.provider == "deepgram" and settings.stt_api_key and audio:
             try:
-                return self._deepgram(audio, content_type)
+                return self._deepgram(audio, content_type, language)
             except Exception:
                 pass
         text = " ".join(words or []).strip()
         return {"provider": "local", "transcript": text, "confidence": 1.0, "is_final": True}
 
-    def _deepgram(self, audio: bytes, content_type: str) -> dict:
-        params = "model=nova-2&smart_format=true&punctuate=true&language=en"
+    def _deepgram(self, audio: bytes, content_type: str, language: str = "en") -> dict:
+        from ..realtime.languages import deepgram_code
+        lang = deepgram_code(language)
+        params = f"model=nova-2&smart_format=true&punctuate=true&language={lang}"
         # Raw linear PCM (from the Twilio media bridge) needs explicit encoding.
         if "l16" in content_type or "linear16" in content_type:
             rate = "8000"

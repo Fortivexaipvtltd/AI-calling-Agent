@@ -81,6 +81,95 @@ async def recording(request: Request) -> dict:
                                  "duration_s": int(form.get("RecordingDuration", "0") or 0)}}
 
 
+@router.post("/inbound")
+async def inbound_answer(request: Request) -> Response:
+    """Inbound call handler: a lead dials our number and the AI answers 24/7.
+    Greets, then streams media (or gathers speech) into the same agent pipeline.
+    Auto-creates the lead from the caller ID if unknown."""
+    form = await _verify(request)
+    from_number = form.get("From", "")
+    # Upsert a lead from caller ID and open an inbound call.
+    from ..db import SessionLocal
+    from ..models import Lead
+    from ..service import build_runtime, save_call_state
+    db = SessionLocal()
+    try:
+        from sqlalchemy import select
+        lead = db.scalar(select(Lead).where(Lead.phone == from_number))
+        if not lead:
+            lead = Lead(org_id=settings.default_org_id, name="Inbound caller",
+                        phone=from_number, source="inbound", status="new")
+            db.add(lead)
+            db.flush()
+        from ..models import Agent
+        agent = db.scalar(select(Agent))
+        rt, call, _ = build_runtime(db, lead, agent)
+        opened = rt.open()
+        opening = getattr(opened, "agent_text", None) or (
+            opened if isinstance(opened, str) else "Hello, thanks for calling.")
+        save_call_state(db, rt, lead.id, agent.id if agent else "", active=True)
+        db.commit()
+        return _twiml(answer_twiml(opening_line=opening, call_id=call.id))
+    finally:
+        db.close()
+
+
+@router.post("/whatsapp/inbound")
+async def whatsapp_inbound(request: Request) -> dict:
+    """Inbound WhatsApp bot: a lead messages us, the AI replies (grounded on the
+    knowledge base). Works with Meta/Twilio WhatsApp webhooks."""
+    raw = await request.body()
+    text, from_number = "", ""
+    ctype = request.headers.get("content-type", "")
+    if "application/json" in ctype:
+        try:
+            import json
+            data = json.loads(raw.decode() or "{}")
+            entry = (((data.get("entry") or [{}])[0].get("changes") or [{}])[0]
+                     .get("value", {}))
+            msg = (entry.get("messages") or [{}])[0]
+            text = (msg.get("text") or {}).get("body", "")
+            from_number = msg.get("from", "")
+        except Exception:
+            pass
+    else:
+        try:
+            from urllib.parse import parse_qs
+            form = {k: v[0] for k, v in parse_qs(raw.decode()).items()}
+            text = form.get("Body", "")
+            from_number = form.get("From", "").replace("whatsapp:", "")
+        except Exception:
+            pass
+    if not text:
+        return {"ok": True, "data": {"reply": ""}}
+
+    from ..ai import knowledge
+    from ..business.whatsapp import WhatsAppProvider
+    from ..db import SessionLocal
+    from ..models import Lead
+    db = SessionLocal()
+    try:
+        from sqlalchemy import select
+        lead = db.scalar(select(Lead).where(Lead.phone == from_number))
+        if not lead:
+            lead = Lead(org_id=settings.default_org_id, name="WhatsApp lead",
+                        phone=from_number, source="whatsapp-inbound", status="new")
+            db.add(lead)
+            db.flush()
+        g = knowledge.answer(db, text)
+        reply = g["answer"] if g.get("grounded") else \
+            ("Thanks for reaching out! A counsellor will share the exact details "
+             "shortly. Meanwhile, would you like our brochure?")
+        WhatsAppProvider().send(from_number, text=reply)
+        from ..observability import audit
+        audit.record(db, action="whatsapp.inbound", entity="lead",
+                     entity_id=lead.id, payload={"in": text[:120], "grounded": g.get("grounded")})
+        db.commit()
+        return {"ok": True, "data": {"reply": reply, "grounded": g.get("grounded")}}
+    finally:
+        db.close()
+
+
 @router.websocket("/media/{call_id}")
 async def media(websocket: WebSocket, call_id: str) -> None:
     """Twilio Media Streams **bidirectional** bridge.
